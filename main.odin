@@ -1,14 +1,5 @@
 package main
 
-// Rectangle packing by simulated annealing over sequence pairs,
-// following Murata et al. 1996 (Sections III and IV-A):
-//   - every module is placed, there is no fixed container
-//   - objective: minimise the area of the bounding rectangle (the "chip")
-//   - moves: swap two modules in Γ+, swap two modules in both Γ+ and Γ-,
-//            rotate a module (swap w and h)
-//   - start from Γ+ = Γ- (all modules in one horizontal row)
-//   - exponential cooling
-
 import "core:fmt"
 import "core:math"
 import "core:math/rand"
@@ -19,8 +10,8 @@ import rl "vendor:raylib"
 import "core:time"
 
 INSTANCE        :: "data/ep2/ep2-30-W-R-25.2kp"
-STEPS_PER_FRAME :: 3000 // annealing moves pr rendered frame
-LIVE            :: true
+STEPS_PER_FRAME :: 3000 // only used if live==true
+LIVE            :: false
 
 Container :: struct {
     w, h: int,
@@ -30,27 +21,22 @@ Module :: struct {
     id, w, h: int,
 }
 
-// A sequence pair plus an orientation per module.
-// pos and neg are permutations of 0..n-1 (indices into the modules slice).
 State :: struct {
     pos, neg: []int,
     rotated:  []bool,
 } 
 
-// Top-left corner of each module, in raylib's y-down coordinates.
 Layout :: struct {
     x, y: []int,
     w, h: int, // chip size
 }
 
 Move_Kind :: enum {
-    Swap_Pos,  // swap modules a and b in Γ+ only
-    Swap_Both, // swap modules a and b in Γ+ and Γ-
-    Rotate,    // swap width and height of module a
+    Swap_Pos,  // swap modules a and b in pos only
+    Swap_Both, // swap modules a and b in pos and neg
+    Rotate,    // swap width and height of module
 }
 
-// a and b are module ids. Every move is its own inverse,
-// so applying the same move again undoes it.
 Move :: struct {
     kind: Move_Kind,
     a, b: int,
@@ -60,7 +46,7 @@ Annealer :: struct {
     modules:        []Module,
     cur, best:      State,
     lay, best_lay:  Layout,
-    rank_n:         []int, // scratch: position of each module in Γ-
+    rank_n:         []int,
     cur_cost:       f64,
     best_cost:      f64,
     temp, t0:       f64,
@@ -82,9 +68,9 @@ dims :: proc(m: Module, rotated: bool) -> (w, h: int) {
 }
 
 // Longest path through the horizontal and vertical constraint graphs.
-// Both graphs only have edges a -> b where a comes before b in Γ+,
-// so walking Γ+ in order is a topological order for both and we never
-// need to build the graphs explicitly. O(n^2), no allocations.
+// Both graphs only have edges a -> b where a comes before b in pos
+// so walking pos in order is a topological order for both and we never
+// need to build the graphs explicitly. O(n^2), no allocations
 evaluate :: proc(modules: []Module, s: State, lay: ^Layout, rank_n: []int) {
     // rank[id] = where is module [id]
     for id, i in s.neg do rank_n[id] = i
@@ -146,8 +132,8 @@ apply_move :: proc(s: ^State, m: Move) {
     }
 }
 
-// progress goes from 0 (hot) to 1 (cold). As in the paper, Γ+-only swaps
-// are favoured early and rotations late.
+// progress goes from 0 (hot) to 1 (cold). As in the paper, pos-only swaps
+// are favoured early and rotations late
 random_move :: proc(n: int, progress: f64) -> Move {
     // picks a first, 0 1 _2_ 3 4
     // we then pick b from n - 1 list, 0 1 _2_ 3  
@@ -203,14 +189,14 @@ init_annealer :: proc(an: ^Annealer, modules: []Module) {
     an.best_lay = make_layout(n)
     an.rank_n = make([]int, n)
 
-    // Γ+ = Γ-: every module left of the next, one horizontal row.
+    // pos = neg: every module left of the next, one horizontal row.
     for i in 0 ..< n {
         an.cur.pos[i] = i
         an.cur.neg[i] = i
     }
 
     // i added this because the sequence starting in a row lead to 85% solved for 200 modules
-    // rand.shuffle(an.cur.neg)
+    rand.shuffle(an.cur.neg)
 
 
     evaluate(modules, an.cur, &an.lay, an.rank_n)
@@ -365,9 +351,6 @@ main :: proc() {
         show(modules[:], &an, total_area)
 
         fmt.println(an.best)
-        // fmt.println(elapsed)
-
-    
 }
 
 show :: proc(modules: []Module, an: ^Annealer, total_area: int) {
@@ -419,7 +402,7 @@ show :: proc(modules: []Module, an: ^Annealer, total_area: int) {
             }
         }
 
-        // Chip outline
+            // Chip outline
         rl.DrawRectangleLinesEx(
             {ox, oy, f32(lay.w) * scale, f32(lay.h) * scale},
             2, rl.RED,
