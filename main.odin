@@ -67,10 +67,6 @@ dims :: proc(m: Module, rotated: bool) -> (w, h: int) {
     return m.w, m.h
 }
 
-// Longest path through the horizontal and vertical constraint graphs.
-// Both graphs only have edges a -> b where a comes before b in pos
-// so walking pos in order is a topological order for both and we never
-// need to build the graphs explicitly. O(n^2), no allocations
 evaluate :: proc(modules: []Module, s: State, lay: ^Layout, rank_n: []int) {
     // rank[id] = where is module [id]
     for id, i in s.neg do rank_n[id] = i
