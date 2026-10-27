@@ -27,20 +27,148 @@ Move :: struct {
     a, b: int,
 }
 
-Annealer :: struct {
+Search :: struct {
     modules:        []Module,
     cur, best:      State,
     lay, best_lay:  Layout,
-    rank_n:         []int,
+    eval:           Eval_Scratch,
     cur_cost:       f64,
     best_cost:      f64,
+    total_moves:    int,
+    accepted:       int,
+    done:           bool,
+}
+
+Annealer :: struct {
+    using search:   Search,
     temp, t0:       f64,
     t_min, alpha:   f64,
     moves_per_temp: int,
     moves_at_temp:  int,
-    total_moves:    int,
-    accepted:       int,
-    done:           bool,
+}
+
+Hillclimber :: struct {
+    using search:   Search,
+    since_improve:  int,
+    restart_after:  int,
+    restarts:       int,
+    progress:       f64,
+}
+
+
+destroy_hillcilmber:: proc(hc: ^Hillclimber) {
+    delete(hc.cur.pos); delete(hc.cur.neg); delete(hc.cur.rotated)
+    delete(hc.best.pos); delete(hc.best.neg); delete(hc.best.rotated)
+    delete(hc.lay.x); delete(hc.lay.y)
+    delete(hc.best_lay.x); delete(hc.best_lay.y)
+    destroy_eval_scratch(&hc.eval)
+}
+
+init_hillclimber :: proc (hc: ^Hillclimber, modules: []Module) {
+    n := len(modules)
+    hc^ = {}
+    hc.modules = modules
+    hc.cur = make_state(n)
+    hc.best = make_state(n)
+    hc.lay = make_layout(n)
+    hc.best_lay = make_layout(n)
+
+    hc.eval = make_eval_scratch(.Murata, n)
+
+    // pos = neg: every module left of the next, one horizontal row.
+    for i in 0 ..< n {
+        hc.cur.pos[i] = i
+        hc.cur.neg[i] = i
+    }
+
+    // i added this because the sequence starting in a row lead to 85% solved for 200 modules
+    rand.shuffle(hc.cur.neg)
+
+    hc.restart_after = 100 * n
+
+    evaluate(modules, hc.cur, &hc.lay, &hc.eval)
+    hc.cur_cost = cost(hc.lay)
+    hc.best_cost = hc.cur_cost
+    copy_state(&hc.best, hc.cur)
+    copy_layout(&hc.best_lay, hc.lay)
+}
+
+
+
+hillclimber :: proc(modules: []Module, time_limit: f64, evaluator: Evaluator) -> Result {
+    hc: Hillclimber
+    init_hillclimber(&hc, modules[:])
+    defer destroy_hillcilmber(&hc)
+
+
+    time_start := time.tick_now()
+    hillclimb(&hc, time_limit, time_start)
+
+    lay := Layout{
+        x = slice.clone(hc.best_lay.x),
+        y = slice.clone(hc.best_lay.y),
+        w = hc.best_lay.w,
+        h = hc.best_lay.h,
+    }
+    seq := State{
+        pos     = slice.clone(hc.best.pos),
+        neg     = slice.clone(hc.best.neg),
+        rotated = slice.clone(hc.best.rotated),
+    }
+
+    return {lay, seq, hc.best_cost, time.duration_seconds(time.tick_since(time_start)), "Hillclimber"}
+
+}
+
+hillclimb :: proc(hc: ^Hillclimber, time_limit: f64, time_start: time.Tick) {
+    CHECK_EVERY :: 1024
+    for !hc.done {
+        for _ in 0 ..< CHECK_EVERY {
+            if hc.done do break
+            hill_step(hc)
+        }
+        if time.duration_seconds(time.tick_since(time_start)) > time_limit {
+            hc.done = true
+        }
+    }
+    // we should consider reheating when it is done before time limit
+    // or make the cooling schedule fit the time limit so it doesnt stop while hot
+}
+
+
+hill_step :: proc(hc: ^Hillclimber) {
+    if hc.done do return
+
+    // Divides current temperature change with total temperature change
+    // progress := math.ln(an.t0 / an.temp) / math.ln(an.t0 / an.t_min)
+    // mv := random_move(len(an.modules), progress)
+    mv := random_move(len(hc.modules), 0) // TODO what should we do wrt progress
+
+    apply_move(&hc.cur, mv)
+    evaluate(hc.modules, hc.cur, &hc.lay, &hc.eval)
+    c := cost(hc.lay)
+    delta := c - hc.cur_cost
+
+    // if delta <= 0 {
+    if delta <= 0 {
+        hc.cur_cost = c
+        hc.accepted += 1
+        if c < hc.best_cost {
+            hc.best_cost = c
+            copy_state(&hc.best, hc.cur)
+            copy_layout(&hc.best_lay, hc.lay)
+        }
+    } else {
+        apply_move(&hc.cur, mv) // undo
+    }
+
+    hc.total_moves += 1
+    // hc.moves_at_temp += 1
+    // if hc.moves_at_temp >= hc.moves_per_temp {
+    //     hc.moves_at_temp = 0
+    //     hc.temp *= hc.alpha
+    //     if hc.temp < hc.t_min do hc.done = true
+    // }
 }
 
 // ---------------------------------------------------------------------------
@@ -100,8 +228,9 @@ dims :: proc(m: Module, rotated: bool) -> (w, h: int) {
     return m.w, m.h
 }
 
-evaluate :: proc(modules: []Module, s: State, lay: ^Layout, rank_n: []int) {
+evaluate_n2 :: proc(modules: []Module, s: State, lay: ^Layout, rank_n: []int) {
     // rank[id] = where is module [id]
+
     for id, i in s.neg do rank_n[id] = i
 
     lay.w, lay.h = 0, 0
@@ -132,6 +261,25 @@ evaluate :: proc(modules: []Module, s: State, lay: ^Layout, rank_n: []int) {
     }
 }
 
+Evaluator :: enum {
+    Murata,
+    Pisinger,
+}
+
+Eval_Scratch :: struct {
+    kind: Evaluator,
+    rank_n: []int,
+}
+
+evaluate :: proc(modules: []Module, s: State, lay: ^Layout, es: ^Eval_Scratch)  {
+    switch es.kind {
+    case .Murata:
+        evaluate_n2(modules, s, lay, es.rank_n)
+    case .Pisinger:
+        fmt.println("Pisinger eval requested, not yet implemented")
+    }
+}
+
 cost :: proc(lay: Layout) -> f64 {
     return f64(lay.w) * f64(lay.h)
 }
@@ -140,6 +288,23 @@ cost :: proc(lay: Layout) -> f64 {
 // ---------------------------------------------------------------------------
 // Simulated annealing
 // ---------------------------------------------------------------------------
+
+// make_eval_scratch :: proc(evaluator: Evaluator, n: int) -> Eval_Scratch {
+//     return {evaluator , make([]int, n)}
+// }
+
+make_eval_scratch :: proc(kind: Evaluator, n: int) -> (es: Eval_Scratch) {
+    es.kind = kind
+    switch kind {
+    case .Murata:       es.rank_n = make([]int, n)
+    case .Pisinger: // pisinger arrays later
+    }
+    return
+}
+
+destroy_eval_scratch :: proc(sc: ^Eval_Scratch) {
+    delete(sc.rank_n)
+}
 
 make_state :: proc(n: int) -> State {
     return {make([]int, n), make([]int, n), make([]bool, n)}
@@ -169,7 +334,11 @@ init_annealer :: proc(an: ^Annealer, modules: []Module) {
     an.best = make_state(n)
     an.lay = make_layout(n)
     an.best_lay = make_layout(n)
-    an.rank_n = make([]int, n)
+    // an.rank_n = make([]int, n)
+
+    an.eval = make_eval_scratch(.Murata, n)
+
+
 
     // pos = neg: every module left of the next, one horizontal row.
     for i in 0 ..< n {
@@ -181,7 +350,7 @@ init_annealer :: proc(an: ^Annealer, modules: []Module) {
     rand.shuffle(an.cur.neg)
 
 
-    evaluate(modules, an.cur, &an.lay, an.rank_n)
+    evaluate(modules, an.cur, &an.lay, &an.eval)
     an.cur_cost = cost(an.lay)
     an.best_cost = an.cur_cost
     copy_state(&an.best, an.cur)
@@ -193,7 +362,7 @@ init_annealer :: proc(an: ^Annealer, modules: []Module) {
     for _ in 0 ..< 200 {
         mv := random_move(n, 0)
         apply_move(&an.cur, mv)
-        evaluate(modules, an.cur, &an.lay, an.rank_n)
+        evaluate(modules, an.cur, &an.lay, &an.eval)
         d := cost(an.lay) - an.cur_cost
         if d > 0 {
             sum += d
@@ -212,7 +381,7 @@ init_annealer :: proc(an: ^Annealer, modules: []Module) {
 
     an.temp = an.t0
 
-    // cool down to 1000x smaller than start temp
+    // cool down to 10000x smaller than start temp
     an.t_min = an.t0 * 1e-4
     // cooling rate
     an.alpha = 0.95
@@ -224,7 +393,7 @@ destroy_annealer :: proc(an: ^Annealer) {
     delete(an.best.pos); delete(an.best.neg); delete(an.best.rotated)
     delete(an.lay.x); delete(an.lay.y)
     delete(an.best_lay.x); delete(an.best_lay.y)
-    delete(an.rank_n)
+    destroy_eval_scratch(&an.eval)
 }
 
 anneal_step :: proc(an: ^Annealer) {
@@ -235,7 +404,7 @@ anneal_step :: proc(an: ^Annealer) {
     mv := random_move(len(an.modules), progress)
 
     apply_move(&an.cur, mv)
-    evaluate(an.modules, an.cur, &an.lay, an.rank_n)
+    evaluate(an.modules, an.cur, &an.lay, &an.eval)
     c := cost(an.lay)
     delta := c - an.cur_cost
 
@@ -276,7 +445,7 @@ anneal :: proc(an: ^Annealer, time_limit: f64, time_start: time.Tick) {
     // or make the cooling schedule fit the time limit so it doesnt stop while hot
 }
 
-murata :: proc(modules: []Module, time_limit: f64) -> Result {
+simulated_annealing :: proc(modules: []Module, time_limit: f64, evaluator: Evaluator) -> Result {
     an: Annealer
     init_annealer(&an, modules[:])
     defer destroy_annealer(&an)
@@ -297,5 +466,5 @@ murata :: proc(modules: []Module, time_limit: f64) -> Result {
         rotated = slice.clone(an.best.rotated),
     }
 
-    return {lay, seq, an.best_cost, time.duration_seconds(time.tick_since(time_start)), "Murata"}
+    return {lay, seq, an.best_cost, time.duration_seconds(time.tick_since(time_start)), "Simulated annealing"}
 }

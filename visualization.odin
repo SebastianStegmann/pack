@@ -10,8 +10,6 @@ visualize2D :: proc(modules: []Module, results: Result, total_area: int) {
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
 
-    // n := len(modules)
-
     for !rl.WindowShouldClose() {
 
         lay := results.best_lay
@@ -48,20 +46,11 @@ visualize2D :: proc(modules: []Module, results: Result, total_area: int) {
             2, rl.RED,
         )
 
-        // util := 100 * f64(total_area) / results.best_cost
-        // status := an.done ? "done" : "annealing"
         rl.DrawText(
             fmt.ctprintf("chip %d x %d = %d  |  module area %d | elapsed_time %.1f",
                 lay.w, lay.h, lay.w * lay.h, total_area, results.elapsed_time),
             margin, 15, 20, rl.BLACK,
         )
-        // rl.DrawText(
-        //     fmt.ctprintf("T = %.2f  |  moves %d  |  accepted %d  |  R to restart",
-        //         an.temp, an.total_moves, an.accepted),
-        //     margin, 42, 18, rl.DARKGRAY,
-        // )
-        // rl.DrawText("red: chip (bounding box)",
-        //     margin, 66, 16, rl.GRAY)
 
         rl.EndDrawing()
         free_all(context.temp_allocator)

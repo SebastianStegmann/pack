@@ -6,7 +6,7 @@ import "core:strconv"
 import "core:strings"
 import "core:time"
 
-INSTANCE        :: "data/ep2/ep2-30-W-R-25.2kp"
+INSTANCE :: "data/ep2/ep2-30-W-R-25.2kp"
 
 Container :: struct {
     w, h: int,
@@ -81,7 +81,7 @@ main :: proc() {
     if !ok do return
     defer delete(modules)
 
-    time_limit: f64 = 10
+    time_limit: f64 = 0.1
 
     total_area := 0
     for m in modules do total_area += m.w * m.h
@@ -89,7 +89,9 @@ main :: proc() {
     // TODO: i think the time should be started inside the algorithm
     //       so when we do multiple runs the start is relative to the algorithm not main
 
-    results := murata(modules[:], time_limit)
+    // results := simulated_annealing(modules[:], time_limit, .Murata)
+    results := hillclimber(modules[:], time_limit, .Murata)
+
 
     fmt.println("results:", results)
 
