@@ -3,6 +3,11 @@ package main
 import "core:fmt"
 import rl "vendor:raylib"
 
+
+// ---------------------------------------------------------------------------
+// 2D visualization
+// ---------------------------------------------------------------------------
+
 visualize2D :: proc(modules: []Module, results: Result, total_area: int) {
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .MSAA_4X_HINT})
     rl.SetTraceLogLevel(.WARNING)
@@ -56,3 +61,9 @@ visualize2D :: proc(modules: []Module, results: Result, total_area: int) {
         free_all(context.temp_allocator)
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// 3D visualization
+// ---------------------------------------------------------------------------
+

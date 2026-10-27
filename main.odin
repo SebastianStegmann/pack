@@ -6,57 +6,6 @@ import "core:strconv"
 import "core:strings"
 import "core:time"
 
-INSTANCE :: "data/ep2/ep2-30-W-R-25.2kp"
-
-Container :: struct {
-    w, h: int,
-}
-
-Module :: struct {
-    id, w, h: int,
-}
-
-// ---------------------------------------------------------------------------
-// Input
-// ---------------------------------------------------------------------------
-
-field :: proc(parts: []string, i: int) -> int {
-    v, _ := strconv.parse_int(parts[i])
-    return v
-}
-
-// Format:
-// rect, id, w, h
-load_instance :: proc(path: string) -> (container: Container, modules: [dynamic]Module, ok: bool) {
-    data, err := os.read_entire_file(path, context.allocator)
-    if err != nil {
-        fmt.eprintln("could not read", path, err)
-        return
-    }
-    defer delete(data)
-
-    it := string(data)
-
-    // skip container
-    c : string
-    c ,_ = strings.split_lines_iterator(&it)
-    c_split := strings.split(c, ", ")
-    defer delete(c_split)
-
-    container = Container{field(c_split, 1), field(c_split, 2)}
-
-    for line in strings.split_lines_iterator(&it) {
-
-        // assumes every file is formatted correctly
-        parts := strings.split(line, ", ")
-        defer delete(parts)
-
-        m := Module{field(parts, 1), field(parts, 2), field(parts, 3)}
-        append(&modules, m)
-    }
-    return container, modules, len(modules) >= 2
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // Takes INSTANCE, gets the modules (and in the future the container)
@@ -97,3 +46,58 @@ main :: proc() {
 
     visualize2D(modules[:], results, total_area)
 }
+
+
+// ---------------------------------------------------------------------------
+// Load data
+// ---------------------------------------------------------------------------
+
+
+INSTANCE :: "data/ep2/ep2-30-W-R-25.2kp"
+
+Container :: struct {
+    w, h: int,
+}
+
+Module :: struct {
+    id, w, h: int,
+}
+
+field :: proc(parts: []string, i: int) -> int {
+    v, _ := strconv.parse_int(parts[i])
+    return v
+}
+
+
+// Format:
+// rect, id, w, h
+load_instance :: proc(path: string) -> (container: Container, modules: [dynamic]Module, ok: bool) {
+    data, err := os.read_entire_file(path, context.allocator)
+    if err != nil {
+        fmt.eprintln("could not read", path, err)
+        return
+    }
+    defer delete(data)
+
+    it := string(data)
+
+    // skip container
+    c : string
+    c ,_ = strings.split_lines_iterator(&it)
+    c_split := strings.split(c, ", ")
+    defer delete(c_split)
+
+    container = Container{field(c_split, 1), field(c_split, 2)}
+
+    for line in strings.split_lines_iterator(&it) {
+
+        // assumes every file is formatted correctly
+        parts := strings.split(line, ", ")
+        defer delete(parts)
+
+        m := Module{field(parts, 1), field(parts, 2), field(parts, 3)}
+        append(&modules, m)
+    }
+    return container, modules, len(modules) >= 2
+}
+
