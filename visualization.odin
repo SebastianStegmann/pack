@@ -37,7 +37,7 @@ visualize2D :: proc(modules: []Module, results: Result, total_area: int) {
                 f32(w) * scale,
                 f32(h) * scale,
             }
-            rl.DrawRectangleRec(r, rl.ColorFromHSV(f32(i) * 360 / 20, 0.45, 0.95))
+            rl.DrawRectangleRec(r, rl.ColorFromHSV(f32(i) * 137.5, 0.45, 0.95))
             rl.DrawRectangleLinesEx(r, 1, rl.DARKGRAY)
             // add number if big enough
             if r.width > 14 && r.height > 12 {

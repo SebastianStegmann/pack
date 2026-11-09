@@ -59,14 +59,10 @@ main :: proc() {
     if !ok do return
     defer delete(modules)
 
-    time_limit: f64 = 0.1
+    time_limit :: 0.5
 
     total_area := 0
     for m in modules do total_area += m.w * m.h
-
-    // TODO: i think the time should be started inside the algorithm
-    //       so when we do multiple runs the start is relative to the algorithm not main
-
 
     avg_time: f64
     avg_best_cost: f64

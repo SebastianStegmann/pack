@@ -435,15 +435,25 @@ init_annealer :: proc(an: ^Annealer, modules: []Module) {
 
 anneal :: proc(an: ^Annealer, time_limit: f64, time_start: time.Tick) {
     CHECK_EVERY :: 1024
+
     for !an.done {
-        for _ in 0 ..< CHECK_EVERY {
-            if an.done do break
-            anneal_step(an)
-        }
-        if time.duration_seconds(time.tick_since(time_start)) > time_limit {
+         frac := time.duration_seconds(time.tick_since(time_start)) / time_limit
+         if frac >= 1 {
             an.done = true
+            break
         }
+        an.temp = an.t0 * math.pow(an.t_min / an.t0, frac)
+        for _ in 0 ..< CHECK_EVERY do anneal_step(an)
     }
+    // for !an.done {
+    //     for _ in 0 ..< CHECK_EVERY {
+    //         if an.done do break
+    //         anneal_step(an)
+    //     }
+    //     if time.duration_seconds(time.tick_since(time_start)) > time_limit {
+    //         an.done = true
+    //     }
+    // }
     // we should consider reheating when it is done before time limit
     // or make the cooling schedule fit the time limit so it doesnt stop while hot
 }
@@ -451,6 +461,7 @@ anneal :: proc(an: ^Annealer, time_limit: f64, time_start: time.Tick) {
 
 anneal_step :: proc(an: ^Annealer) {
     if an.done do return
+
 
     // Divides current temperature change with total temperature change
     progress := math.ln(an.t0 / an.temp) / math.ln(an.t0 / an.t_min)
